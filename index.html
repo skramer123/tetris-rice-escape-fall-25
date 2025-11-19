@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>Tetris Fill with Music + Alien Escape</title>
+<title>Tetris Fill with Music and Timer</title>
 <style>
     body {
         background: #111;
@@ -32,6 +33,7 @@
         text-align: center;
         display: none;
         pointer-events: none;
+        z-index: 2;
     }
     #nextBox {
         position: absolute;
@@ -49,6 +51,7 @@
         font-size: 11px;
         padding: 4px;
         box-shadow: 0 0 10px rgba(0,0,0,0.6);
+        z-index: 1;
     }
     #blocksRemaining {
         margin-top: 4px;
@@ -56,21 +59,14 @@
         color: #bbb;
         text-align: center;
     }
-    /* Timer on the left side */
-    #timerBox {
+    /* Large timer on the left */
+    #timer {
         position: absolute;
-        top: 10px;
-        left: -140px;
-        width: 120px;
-        height: 40px;
-        border: 2px solid #666;
-        background: #111;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #bbb;
-        font-size: 16px;
-        box-shadow: 0 0 10px rgba(0,0,0,0.6);
+        left: -150px;
+        top: 40px;
+        font-size: 50px; /* option 2: medium-large */
+        font-weight: bold;
+        color: #fff;
     }
     audio { display:none; }
 
@@ -85,6 +81,7 @@
         display: none;
         text-align: center;
         font-size: 14px;
+        z-index: 3;
     }
     #resetBarBG {
         width: 100%;
@@ -112,6 +109,7 @@
         display: none;
         text-align: center;
         font-size: 14px;
+        z-index: 3;
     }
     #raiseBarBG {
         width: 100%;
@@ -128,35 +126,30 @@
         transition: width 0.1s linear;
     }
 
-    /* Full-screen alien overlay when timer hits 0 */
-    #alienOverlay {
+    /* Fullscreen overlay for alien / escape */
+    #fullOverlay {
         position: fixed;
-        inset: 0;
-        background: url('alien.png') no-repeat center center;
-        background-size: cover;
-        display: none;
-        pointer-events: none;
-        z-index: 10;
-    }
-
-    /* Full-screen escape overlay when holding W */
-    #escapeOverlay {
-        position: fixed;
-        inset: 0;
+        top: 0; left: 0;
+        width: 100vw;
+        height: 100vh;
         background: #000;
         display: none;
-        z-index: 20;
-        pointer-events: none;
-    }
-    #escapeText {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 64px;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+        color: #fff;
         text-align: center;
-        width: 100%;
     }
+    #fullOverlay img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    #fullOverlayMessage {
+        font-size: 48px;
+        font-weight: bold;
+    }
+
 </style>
 </head>
 <body>
@@ -164,17 +157,12 @@
 <div id="gameContainer">
     <canvas id="board"></canvas>
     <div id="message"></div>
-
-    <!-- Timer on left -->
-    <div id="timerBox">
-        <span id="timerDisplay">01:00</span>
-    </div>
-
     <div id="nextBox">
         <div id="nextLabel">Next</div>
         <canvas id="nextCanvas" width="80" height="60"></canvas>
         <div id="blocksRemaining">Blocks remaining: 23</div>
     </div>
+    <div id="timer">60:00</div>
 
     <!-- Reset bar (R anytime) -->
     <div id="resetBarWrapper">
@@ -190,21 +178,38 @@
             <div id="raiseBarFill"></div>
         </div>
         <div id="raiseBarText">Hold H to raise target</div>
+    
+    <!-- Escape bar (W held) -->
+    <div id="escapeBarWrapper" style="display:none; position:absolute; bottom:70px; left:50%; transform:translateX(-50%); width:70%; max-width:260px; text-align:center; z-index:3; font-size:14px;">
+        <div style="width:100%; height:10px; background:rgba(255,255,255,0.2); border-radius:5px; overflow:hidden; margin-bottom:4px;">
+            <div id="escapeBarFill" style="height:100%; width:0%; background:#e91e63; transition:width 0.1s linear;"></div>
+        </div>
+        <div>Hold W to escape</div>
+    </div>
+
+    <!-- Pause bar (P held) -->
+    <div id="pauseBarWrapper" style="display:none; position:absolute; bottom:95px; left:50%; transform:translateX(-50%); width:70%; max-width:260px; text-align:center; z-index:3; font-size:14px;">
+        <div style="width:100%; height:10px; background:rgba(255,255,255,0.2); border-radius:5px; overflow:hidden; margin-bottom:4px;">
+            <div id="pauseBarFill" style="height:100%; width:0%; background:#00bcd4; transition:width 0.1s linear;"></div>
+        </div>
+        <div>Hold P to pause/play timer</div>
     </div>
 </div>
+</div>
 
-<!-- Overlays -->
-<div id="alienOverlay"></div>
-<div id="escapeOverlay">
-    <div id="escapeText">Congratulations! You Escaped!</div>
+<!-- Fullscreen overlay (alien or escape message) -->
+<div id="fullOverlay">
+    <div id="fullOverlayContent"></div>
 </div>
 
 <!-- Background music: only restarts on FULL reset, not on Try Again -->
 <audio id="bgm" src="mix-chunk-1_uLO4kfAU.mp3" loop></audio>
+<audio id="escapeWinSound" src="orchestral-win-331233.mp3"></audio>
 
 <!-- Win sounds: both play simultaneously on win -->
 <audio id="winSound1" src="electric-motor-whir-77588.mp3"></audio>
 <audio id="winSound2" src="win.mp3"></audio>
+<audio id="alienSound" src="scary-scream-401725.mp3"></audio>
 
 <script>
 const COLS = 10, ROWS = 20, BLOCK = 30;
@@ -225,9 +230,10 @@ const raiseBarWrapper = document.getElementById("raiseBarWrapper");
 const raiseBarFill = document.getElementById("raiseBarFill");
 
 const blocksRemainingEl = document.getElementById("blocksRemaining");
-const timerDisplay = document.getElementById("timerDisplay");
-const alienOverlay = document.getElementById("alienOverlay");
-const escapeOverlay = document.getElementById("escapeOverlay");
+const timerEl = document.getElementById("timer");
+
+const fullOverlay = document.getElementById("fullOverlay");
+const fullOverlayContent = document.getElementById("fullOverlayContent");
 
 canvas.width = COLS * BLOCK;
 canvas.height = ROWS * BLOCK;
@@ -250,15 +256,23 @@ let hHeld = false;
 let hHoldStart = null;
 let targetRaised = false; // true when H has been held long enough this run
 
-// Timer: 1 minute countdown
-const TIMER_START_MS = 1 * 60 * 1000;
-let timerRemaining = TIMER_START_MS;
-let aliensActive = false;
+// P key hold for timer pause/play toggle
+let pHeld = false;
+let pHoldStart = null;
 
 // W key hold for escape
 let wHeld = false;
 let wHoldStart = null;
-let escapeActive = false;
+
+// Timer state
+const TIMER_START = 3600; // seconds
+let timerRemaining = TIMER_START;
+let timerRunning = false; // controlled via P and startGame
+let timerFrozen = false;  // when alien or escape happens, no further changes
+
+// Alien / escape states
+let alienTriggered = false;
+let escaped = false;
 
 // COLORS
 const COLORS = ["#000","#f44","#4f4","#44f","#ff4","#f4f","#4ff","#f80","#cc0"];
@@ -290,15 +304,15 @@ function updateBlocksRemaining(){
     blocksRemainingEl.textContent = "Blocks remaining: " + remaining;
 }
 
-function formatTime(ms){
-    const totalSec = Math.max(0, Math.floor(ms / 1000));
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return (m < 10 ? "0"+m : m) + ":" + (s < 10 ? "0"+s : s);
+function formatTime(secs){
+    secs = Math.max(0, secs);
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return m + ":" + (s < 10 ? "0" + s : s);
 }
 
 function updateTimerDisplay(){
-    timerDisplay.textContent = formatTime(timerRemaining);
+    timerEl.textContent = formatTime(timerRemaining);
 }
 
 function drawBlock(x,y,colorIndex){
@@ -416,7 +430,7 @@ function showMessage(msg, autoRestart){
     msgEl.style.display = "block";
     if(autoRestart){
         setTimeout(()=>{
-            // LOSS auto-restart: DO NOT restart music, DO NOT reset targetRaised
+            // LOSS auto-restart: DO NOT restart music, DO NOT reset targetRaised or timer
             lossResetGame();
         },3000);
     }
@@ -450,7 +464,7 @@ function checkWin(){
     }
 }
 
-// LOSS reset: DOES NOT restart music; DOES NOT reset targetRaised
+// LOSS reset: DOES NOT restart music; DOES NOT reset targetRaised or timer
 function lossResetGame(){
     board = Array.from({length:ROWS},()=>Array(COLS).fill(0));
     pieceIndex=0;
@@ -460,15 +474,6 @@ function lossResetGame(){
     fallTimer=0;
     lastTime=0;
     softDrop=false;
-
-    // reset timer & overlays for new attempt
-    timerRemaining = TIMER_START_MS;
-    aliensActive = false;
-    escapeActive = false;
-    updateTimerDisplay();
-    alienOverlay.style.display = "none";
-    escapeOverlay.style.display = "none";
-
     updateNextPreview();
     updateBlocksRemaining();
     // do NOT pause or restart music here
@@ -479,7 +484,7 @@ function lossResetGame(){
     spawnPiece();
 }
 
-// FULL reset (holding R for 5s anytime) — restarts the music; targetRaised resets
+// FULL reset (holding R for 5s anytime) — restarts the music; targetRaised resets; timer resets
 function fullResetGame(){
     board = Array.from({length:ROWS},()=>Array(COLS).fill(0));
     pieceIndex=0;
@@ -490,17 +495,14 @@ function fullResetGame(){
     lastTime=0;
     softDrop=false;
     targetRaised = false;
-
-    // reset timer & overlays
-    timerRemaining = TIMER_START_MS;
-    aliensActive = false;
-    escapeActive = false;
-    updateTimerDisplay();
-    alienOverlay.style.display = "none";
-    escapeOverlay.style.display = "none";
-
+    alienTriggered = false;
+    escaped = false;
+    timerRemaining = TIMER_START;
+    timerRunning = false;
+    timerFrozen = false;
     updateNextPreview();
     updateBlocksRemaining();
+    updateTimerDisplay();
     gameStarted=false;
     rHeld=false;
     rHoldStart=null;
@@ -508,6 +510,10 @@ function fullResetGame(){
     hideRaiseBar();
     hHeld=false;
     hHoldStart=null;
+    pHeld=false;
+    pHoldStart=null;
+    wHeld=false;
+    wHoldStart=null;
 
     // STOP + REWIND MUSIC — only here
     bgm.pause();
@@ -517,6 +523,10 @@ function fullResetGame(){
     if (winSound1) { winSound1.pause(); winSound1.currentTime = 0; }
     if (winSound2) { winSound2.pause(); winSound2.currentTime = 0; }
 
+    // Hide overlay
+    fullOverlay.style.display = "none";
+    fullOverlayContent.innerHTML = "";
+
     msgEl.innerHTML = "Press any key to begin";
     msgEl.style.display = "block";
 }
@@ -525,18 +535,13 @@ function startGame(){
     if(gameStarted) return;
     gameStarted=true;
     msgEl.style.display="none";
-
-    // fresh timer state each run
-    timerRemaining = TIMER_START_MS;
-    aliensActive = false;
-    escapeActive = false;
-    updateTimerDisplay();
-    alienOverlay.style.display = "none";
-    escapeOverlay.style.display = "none";
-
     spawnPiece();
     // Music only starts once per full run
     try{ bgm.play(); }catch(e){}
+    // Start timer counting if not frozen
+    if(!timerFrozen){
+        timerRunning = true;
+    }
 }
 
 // Reset bar helpers (R)
@@ -567,6 +572,29 @@ function updateRaiseBar(progress){
     raiseBarFill.style.width = pct + "%";
 }
 
+
+// Escape (W) bar helpers
+function showEscapeBar(){ document.getElementById("escapeBarWrapper").style.display = "block"; }
+function hideEscapeBar(){ 
+    document.getElementById("escapeBarWrapper").style.display = "none"; 
+    document.getElementById("escapeBarFill").style.width = "0%"; 
+}
+function updateEscapeBar(p){ 
+    showEscapeBar();
+    document.getElementById("escapeBarFill").style.width = (Math.max(0, Math.min(1,p))*100) + "%";
+}
+
+// Pause (P) bar helpers
+function showPauseBar(){ document.getElementById("pauseBarWrapper").style.display = "block"; }
+function hidePauseBar(){ 
+    document.getElementById("pauseBarWrapper").style.display = "none"; 
+    document.getElementById("pauseBarFill").style.width = "0%"; 
+}
+function updatePauseBar(p){ 
+    showPauseBar();
+    document.getElementById("pauseBarFill").style.width = (Math.max(0, Math.min(1,p))*100) + "%";
+}
+
 // Input
 document.addEventListener("keydown",(e)=>{
     if(e.key === "r" || e.key === "R"){
@@ -575,8 +603,16 @@ document.addEventListener("keydown",(e)=>{
     if(e.key === "h" || e.key === "H"){
         hHeld = true;
     }
+    if(e.key === "p" || e.key === "P"){
+        pHeld = true;
+    }
     if(e.key === "w" || e.key === "W"){
         wHeld = true;
+    }
+
+    // If overlay active (alien or escape), no game controls, only R via loop
+    if(alienTriggered || escaped){
+        return;
     }
 
     // If game hasn't started yet (initial or after full reset), start when any arrow is pressed
@@ -585,7 +621,7 @@ document.addEventListener("keydown",(e)=>{
         return;
     }
 
-    // During win screen, ignore movement (but R still works via loop)
+    // During win screen, ignore movement (but R, P, H, W still processed via loop)
     if(gameOver && lastResultWasWin){
         return;
     }
@@ -612,6 +648,10 @@ document.addEventListener("keyup",(e)=>{
         hHoldStart = null;
         hideRaiseBar();
     }
+    if(e.key === "p" || e.key === "P"){
+        pHeld = false;
+        pHoldStart = null;
+    }
     if(e.key === "w" || e.key === "W"){
         wHeld = false;
         wHoldStart = null;
@@ -619,45 +659,79 @@ document.addEventListener("keyup",(e)=>{
     if(e.key==="ArrowDown") softDrop=false;
 });
 
+function triggerAlienOverlay(){
+    
+    const alienSound = document.getElementById('alienSound');
+    if(alienSound){ alienSound.currentTime=0; alienSound.play().catch(()=>{});} 
+    alienTriggered = true;
+    timerRunning = false;
+    timerFrozen = true;
+    fullOverlay.style.display = "flex";
+    fullOverlayContent.innerHTML = '<div style="position:absolute;top:20px;left:20px;font-size:32px;color:white;z-index:2;">Time is up! The aliens have arrived!</div><img src="alien.png" alt="Alien">';
+}
+
+function triggerEscapeOverlay(){
+    // Play the escape orchestral sound if present
+    const esc = document.getElementById('escapeWinSound');
+    if (esc) {
+        esc.currentTime = 0;
+        esc.play().catch(() => {});
+    }
+
+    // Mark game as escaped and freeze timer
+    escaped = true;
+    timerRunning = false;
+    timerFrozen = true;
+
+    // Compute elapsed time: 60 minutes (TIMER_START) - time remaining
+    let elapsed = TIMER_START - timerRemaining;
+    if (elapsed < 0) elapsed = 0;
+
+    // Convert to MM:SS
+    let mins = Math.floor(elapsed / 60);
+    let secs = Math.floor(elapsed % 60);
+    let timeStr = mins + ":" + (secs < 10 ? "0" + secs : secs);
+
+    // Show full-screen escape message with final time
+    fullOverlay.style.display = "flex";
+    fullOverlayContent.innerHTML =
+        '<div id="fullOverlayMessage">' +
+        'Congratulations! You Escaped!<br>' +
+        'Final Time: ' + timeStr +
+        '</div>';
+}
+
 // main loop
 function loop(t){
     if(!lastTime) lastTime=t;
     let dt=t-lastTime;
     lastTime=t;
 
-    // timer logic: counts down while game running, stops at 0
-    if(gameStarted && !escapeActive && !aliensActive && timerRemaining > 0){
-        timerRemaining -= dt;
-        if(timerRemaining <= 0){
-            timerRemaining = 0;
-            aliensActive = true;
-            alienOverlay.style.display = "block";
+    // Game & timer update only if no overlay
+    if(!alienTriggered && !escaped){
+        if(gameStarted && !gameOver){
+            fallTimer+=dt;
+            let interval = softDrop ? 60 : fallInterval;
+            if(fallTimer>=interval){
+                fallTimer=0;
+                stepDown();
+            }
         }
-        updateTimerDisplay();
+
+        // Timer countdown
+        if(timerRunning && !timerFrozen && timerRemaining > 0){
+            timerRemaining -= dt / 1000;
+            if(timerRemaining <= 0){
+                timerRemaining = 0;
+                updateTimerDisplay();
+                // Alien takeover when timer hits 0
+                triggerAlienOverlay();
+            } else {
+                updateTimerDisplay();
+            }
+        }
     }
 
-    // W escape logic (5 second hold)
-    if(!escapeActive && wHeld){
-        if(wHoldStart === null) wHoldStart = t;
-        let elapsed = t - wHoldStart;
-        if(elapsed >= 5000){
-            escapeActive = true;
-            // stop timer & show black screen with text
-            alienOverlay.style.display = "none";
-            escapeOverlay.style.display = "block";
-        }
-    } else if(!wHeld){
-        wHoldStart = null;
-    }
-
-    if(gameStarted && !gameOver){
-        fallTimer+=dt;
-        let interval = softDrop ? 60 : fallInterval;
-        if(fallTimer>=interval){
-            fallTimer=0;
-            stepDown();
-        }
-    }
     drawBoard();
 
     // Reset logic with R key and progress bar (anytime)
@@ -675,7 +749,7 @@ function loop(t){
     }
 
     // Raise-target logic with H key during active game (only if not already raised)
-    if(gameStarted && !gameOver && !targetRaised){
+    if(gameStarted && !gameOver && !targetRaised && !alienTriggered && !escaped){
         if(hHeld){
             if(hHoldStart===null) hHoldStart = t;
             let elapsedH = t - hHoldStart;
@@ -688,6 +762,35 @@ function loop(t){
         } else {
             hHoldStart = null;
             hideRaiseBar();
+        }
+    }
+
+    // P key: hold 5s to toggle pause/play timer (only if not frozen)
+    if(!alienTriggered && !escaped && !timerFrozen && timerRemaining > 0){
+        if(pHeld){
+            if(pHoldStart === null) pHoldStart = t;
+            let elapsedP = t - pHoldStart;
+            if(elapsedP >= 5000){
+                // toggle
+                timerRunning = !timerRunning;
+                pHoldStart = null; // require another 5s hold next time
+            }
+        } else {
+            pHoldStart = null;
+        }
+    }
+
+    // W key: hold 5s to escape before timer reaches 0
+    if(!alienTriggered && !escaped && timerRemaining > 0){
+        if(wHeld){
+            if(wHoldStart === null) wHoldStart = t;
+            let elapsedW = t - wHoldStart;
+            if(elapsedW >= 5000){
+                triggerEscapeOverlay();
+                wHoldStart = null;
+            }
+        } else {
+            wHoldStart = null;
         }
     }
 
