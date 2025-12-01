@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -64,7 +63,7 @@
         position: absolute;
         left: -150px;
         top: 40px;
-        font-size: 50px; /* option 2: medium-large */
+        font-size: 50px;
         font-weight: bold;
         color: #fff;
     }
@@ -150,6 +149,50 @@
         font-weight: bold;
     }
 
+    /* Keypad panel (appears under timer, left of board) */
+    #keypadPanel {
+        position: absolute;
+        left: -260px;
+        top: 140px;
+        width: 220px;
+        padding: 10px;
+        background: #111;
+        border: 2px solid #555;
+        border-radius: 10px;
+        color: #fff;
+        font-size: 14px;
+        display: none;
+        box-shadow: 0 0 10px rgba(0,0,0,0.6);
+    }
+    #keypadTitle {
+        text-align: center;
+        font-size: 14px;
+        margin-bottom: 6px;
+    }
+    #keypadDigits {
+        display: flex;
+        justify-content: space-between;
+        margin: 4px 0;
+    }
+    .keypadDigit {
+        padding: 4px 6px;
+        border-radius: 4px;
+    }
+    .keypadDigit.selected {
+        border: 1px solid #fff; /* rectangle highlight */
+    }
+    #keypadInput {
+        margin-top: 6px;
+        font-size: 20px;
+        text-align: center;
+        letter-spacing: 4px;
+    }
+    #keypadHelp {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #bbb;
+        text-align: center;
+    }
 </style>
 </head>
 <body>
@@ -163,6 +206,25 @@
         <div id="blocksRemaining">Blocks remaining: 23</div>
     </div>
     <div id="timer">60:00</div>
+
+    <!-- Keypad panel (appears after win) -->
+    <div id="keypadPanel">
+        <div id="keypadTitle">Escape Pod Access Code</div>
+        <div id="keypadDigits">
+            <span class="keypadDigit" data-digit="0">0</span>
+            <span class="keypadDigit" data-digit="1">1</span>
+            <span class="keypadDigit" data-digit="2">2</span>
+            <span class="keypadDigit" data-digit="3">3</span>
+            <span class="keypadDigit" data-digit="4">4</span>
+            <span class="keypadDigit" data-digit="5">5</span>
+            <span class="keypadDigit" data-digit="6">6</span>
+            <span class="keypadDigit" data-digit="7">7</span>
+            <span class="keypadDigit" data-digit="8">8</span>
+            <span class="keypadDigit" data-digit="9">9</span>
+        </div>
+        <div id="keypadInput">_ _ _ _</div>
+        <div id="keypadHelp">←/→ move   ↑ enter   ↓ backspace</div>
+    </div>
 
     <!-- Reset bar (R anytime) -->
     <div id="resetBarWrapper">
@@ -212,6 +274,9 @@
 <audio id="winSound2" src="win_theme.mp3"></audio>
 <audio id="alienSound" src="alien_scream.mp3"></audio>
 
+<!-- Wrong code sound -->
+<audio id="wrongSound" src="wrong-47985.mp3"></audio>
+
 <script>
 const COLS = 10, ROWS = 20, BLOCK = 30;
 const canvas = document.getElementById("board");
@@ -222,6 +287,7 @@ const nctx = nextCanvas.getContext("2d");
 const bgm = document.getElementById("bgm");
 const winSound1 = document.getElementById("winSound1");
 const winSound2 = document.getElementById("winSound2");
+const wrongSound = document.getElementById("wrongSound");
 
 const resetBarWrapper = document.getElementById("resetBarWrapper");
 const resetBarFill = document.getElementById("resetBarFill");
@@ -235,6 +301,10 @@ const timerEl = document.getElementById("timer");
 
 const fullOverlay = document.getElementById("fullOverlay");
 const fullOverlayContent = document.getElementById("fullOverlayContent");
+
+const keypadPanel = document.getElementById("keypadPanel");
+const keypadInputEl = document.getElementById("keypadInput");
+const keypadDigitEls = Array.from(document.querySelectorAll(".keypadDigit"));
 
 canvas.width = COLS * BLOCK;
 canvas.height = ROWS * BLOCK;
@@ -274,6 +344,12 @@ let timerFrozen = false;  // when alien or escape happens, no further changes
 // Alien / escape states
 let alienTriggered = false;
 let escaped = false;
+
+// Keypad state
+let keypadActive = false;
+let keypadSelection = 0;
+let keypadInput = [];
+const CORRECT_CODE = "3256";
 
 // COLORS
 const COLORS = ["#000","#f44","#4f4","#44f","#ff4","#f4f","#4ff","#f80","#cc0"];
@@ -337,7 +413,6 @@ function drawBoard(){
     }
 
     // highlight target region
-    // normal: bottom 10 rows; raised: top boundary moves up by 1, bottom row still included
     const startRow = targetRaised ? ROWS - 11 : ROWS - 10;
     const rowsHighlighted = ROWS - startRow; // 10 normally, 11 when raised
     ctx.fillStyle = "rgba(255,255,255,0.08)";
@@ -437,9 +512,51 @@ function showMessage(msg, autoRestart){
     }
 }
 
+function activateKeypad(){
+    keypadActive = true;
+    keypadSelection = 0;
+    keypadInput = [];
+    refreshKeypad();
+}
+
+function refreshKeypad(){
+    if(!keypadPanel) return;
+    if(!keypadActive){
+        keypadPanel.style.display = "none";
+        return;
+    }
+    keypadPanel.style.display = "block";
+    keypadDigitEls.forEach((el, idx) => {
+        if(idx === keypadSelection) el.classList.add("selected");
+        else el.classList.remove("selected");
+    });
+    let display = [];
+    for(let i=0;i<4;i++){
+        display.push(i < keypadInput.length ? keypadInput[i] : "_");
+    }
+    keypadInputEl.textContent = display.join(" ");
+}
+
+function handleKeypadComplete(){
+    const code = keypadInput.join("");
+    if(code === CORRECT_CODE){
+        keypadActive = false;
+        refreshKeypad();
+        // Use the existing escape overlay as the final success screen
+        triggerEscapeOverlay();
+    } else {
+        if(wrongSound){
+            wrongSound.currentTime = 0;
+            wrongSound.play().catch(()=>{});
+        }
+        keypadInput = [];
+        keypadSelection = 0;
+        refreshKeypad();
+    }
+}
+
 function checkWin(){
     gameOver=true;
-    // cutoff: blocks cannot be above top of target region
     const cutoff = targetRaised ? ROWS - 11 : ROWS - 10;
     let overflow=false;
 
@@ -459,6 +576,9 @@ function checkWin(){
         if (winSound2) {
             try { winSound2.currentTime = 0; winSound2.play(); } catch(e) {}
         }
+
+        // Activate keypad after win
+        activateKeypad();
     } else {
         lastResultWasWin=false;
         showMessage("Try Again", true);
@@ -477,11 +597,17 @@ function lossResetGame(){
     softDrop=false;
     updateNextPreview();
     updateBlocksRemaining();
-    // do NOT pause or restart music here
     gameStarted=true;
     msgEl.style.display="none";
     hideResetBar();
     hideRaiseBar();
+
+    // Reset keypad
+    keypadActive = false;
+    keypadInput = [];
+    keypadSelection = 0;
+    refreshKeypad();
+
     spawnPiece();
 }
 
@@ -528,6 +654,12 @@ function fullResetGame(){
     fullOverlay.style.display = "none";
     fullOverlayContent.innerHTML = "";
 
+    // Reset keypad
+    keypadActive = false;
+    keypadInput = [];
+    keypadSelection = 0;
+    refreshKeypad();
+
     msgEl.innerHTML = "Press any key to begin";
     msgEl.style.display = "block";
 }
@@ -537,9 +669,7 @@ function startGame(){
     gameStarted=true;
     msgEl.style.display="none";
     spawnPiece();
-    // Music only starts once per full run
     try{ bgm.play(); }catch(e){}
-    // Start timer counting if not frozen
     if(!timerFrozen){
         timerRunning = true;
     }
@@ -572,7 +702,6 @@ function updateRaiseBar(progress){
     const pct = Math.max(0, Math.min(1, progress)) * 100;
     raiseBarFill.style.width = pct + "%";
 }
-
 
 // Escape (W) bar helpers
 function showEscapeBar(){ document.getElementById("escapeBarWrapper").style.display = "block"; }
@@ -616,14 +745,40 @@ document.addEventListener("keydown",(e)=>{
         return;
     }
 
+    // Keypad active: arrows control keypad only
+    if(keypadActive){
+        if(e.key === "ArrowLeft"){
+            keypadSelection = (keypadSelection + keypadDigitEls.length - 1) % keypadDigitEls.length;
+            refreshKeypad();
+        } else if(e.key === "ArrowRight"){
+            keypadSelection = (keypadSelection + 1) % keypadDigitEls.length;
+            refreshKeypad();
+        } else if(e.key === "ArrowUp"){
+            if(keypadInput.length < 4){
+                const digit = keypadDigitEls[keypadSelection].getAttribute("data-digit");
+                keypadInput.push(digit);
+                refreshKeypad();
+                if(keypadInput.length === 4){
+                    handleKeypadComplete();
+                }
+            }
+        } else if(e.key === "ArrowDown"){
+            if(keypadInput.length > 0){
+                keypadInput.pop();
+                refreshKeypad();
+            }
+        }
+        return;
+    }
+
     // If game hasn't started yet (initial or after full reset), start when any arrow is pressed
     if(!gameStarted && ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){
         startGame();
         return;
     }
 
-    // During win screen, ignore movement (but R, P, H, W still processed via loop)
-    if(gameOver && lastResultWasWin){
+    // During win screen, ignore movement UNLESS keypad is active
+    if(gameOver && lastResultWasWin && !keypadActive){
         return;
     }
 
@@ -661,7 +816,6 @@ document.addEventListener("keyup",(e)=>{
 });
 
 function triggerAlienOverlay(){
-    
     const alienSound = document.getElementById('alienSound');
     if(alienSound){ alienSound.currentTime=0; alienSound.play().catch(()=>{});} 
     alienTriggered = true;
@@ -725,7 +879,6 @@ function loop(t){
             if(timerRemaining <= 0){
                 timerRemaining = 0;
                 updateTimerDisplay();
-                // Alien takeover when timer hits 0
                 triggerAlienOverlay();
             } else {
                 updateTimerDisplay();
@@ -749,12 +902,12 @@ function loop(t){
         hideResetBar();
     }
 
-    // Raise-target logic with H key during active game (only if not already raised)
+    // Raise-target logic with H key
     if(gameStarted && !gameOver && !targetRaised && !alienTriggered && !escaped){
         if(hHeld){
             if(hHoldStart===null) hHoldStart = t;
             let elapsedH = t - hHoldStart;
-            let progressH = elapsedH / 5000; // 5 seconds
+            let progressH = elapsedH / 5000;
             updateRaiseBar(progressH);
             if(elapsedH >= 5000){
                 targetRaised = true;
@@ -766,16 +919,15 @@ function loop(t){
         }
     }
 
-    // P key: hold 5s to toggle pause/play timer (only if not frozen)
+    // P key: hold 5s to toggle pause/play timer
     if(!alienTriggered && !escaped && !timerFrozen && timerRemaining > 0){
         if(pHeld){
             if(pHoldStart === null) pHoldStart = t;
             let elapsedP = t - pHoldStart;
             updatePauseBar(elapsedP / 5000);
             if(elapsedP >= 5000){
-                // toggle
                 timerRunning = !timerRunning;
-                pHoldStart = null; // require another 5s hold next time
+                pHoldStart = null;
                 hidePauseBar();
             }
         } else {
@@ -809,6 +961,7 @@ updateBlocksRemaining();
 updateTimerDisplay();
 msgEl.innerHTML="Press any key to begin";
 msgEl.style.display="block";
+refreshKeypad();
 requestAnimationFrame(loop);
 </script>
 
